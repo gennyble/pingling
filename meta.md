@@ -21,14 +21,14 @@ circular because it's going back to the {meta}. Absolute links will be
 displayed differently. If I link to the homepage, like this:
 {https://bookcase.name}, it should get square brackets. If I, for some reason,
 want to name that link, I *MUST* use a reference link. Reference links in this
-markdown-but-not langauge require a bang afte the opening brace. I could use
+markdown-but-not language require a bang after the opening brace. I could use
 them to, for example, link to {!Myself on Twitter}. Currently you cannot rename
 internal links.
 
 [Myself on Twitter]: https://twitter.com/gennyble
 
 This derivative-of-markdown is designed to be as readable as possible when it's
-in-writing or un-processed, and to be easily parseable. The hardest thing, I
+in-writing or unprocessed, and to be easily parseable. The hardest thing, I
 think, will be the internal linking. It hasn't been properly described yet,
 so let's get to that.
 
@@ -46,7 +46,7 @@ parent to the link so it looks like `{audio/formats}` and you're good!
 What does that require of the parser? Well, I'd probably create a tree of the
 garden in memory, but you could, in theory, look through it on every internal
 link. I mean, I wouldn't recommend it, but if you're really tight on RAM, it
-could be neccesary.
+could be necessary.
 
 ### Block Elements
 Except for headings, there are a few block level elements that are useful and
@@ -60,4 +60,4 @@ preserves
 line breaks
 ```
 
-What if you need to talk to the parser becaues it'd do something to the text that you'd rather it not?
+What if you need to talk to the parser because it'd do something to the text that you'd rather it not?
