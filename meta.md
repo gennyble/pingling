@@ -13,13 +13,15 @@ This markup language is inspired by the {!Oscean Markup}, {!GemText}, and of cou
 
 How many heading levels do you really need? I guess I decided it was four.
 
-### Inline Elements
+### *Inline Elements*
 
 Here is some **bold** and *italic* text. We're doing inline block elements? Show me an `inline code block` and maybe even an internal link, in this case circular because it's going back to the {meta}. Absolute links will be displayed differently. If I link to the homepage, like this: {https://bookcase.name}, it should get square brackets. If I, for some reason, want to name that link, I *MUST* use a reference link. Reference links in this markdown-but-not language require a bang after the opening brace. I could use them to, for example, link to {!Myself on Twitter}. Currently you cannot rename internal links.
 
 [Myself on Twitter]: https://twitter.com/gennyble
 
 This derivative-of-markdown is designed to be as readable as possible when it's in-writing or unprocessed, and to be easily parseable. The hardest thing, I think, will be the internal linking. It hasn't been properly described yet, so let's get to that.
+
+*Italic and also a bit of **bold** thrown in there. Without ending the italic, can we do **another bold?***
 
 ### Images
 Alt-text is first class and required to get your image to be one and not just a link. You link an image like anything else, by using any kind of link, but it will only become some kind of `<img>`- to use HTML as an example- if you write alt for it. The syntax for which is to put, on the line directly below it, a paragraph leading with a carrot. You may pad it away from the carrot with a space; whitespace is trimmed. Here's an example:
