@@ -1,6 +1,11 @@
-use std::path::{Path, PathBuf};
+use std::{
+    fs,
+    io::Write,
+    path::{Path, PathBuf},
+};
 
 use confindent::Confindent;
+use generator::parse_file;
 use thiserror::Error;
 
 fn main() {
@@ -22,6 +27,16 @@ fn main() {
         }
     };
 
+    let target = match conf.child_value("Target") {
+        Some(val) => PathBuf::from(val),
+        None => {
+            eprintln!(
+                "Please specify where the HTML wikarden will be placed with the configuration `Target` key"
+            );
+            std::process::exit(-1);
+        }
+    };
+
     let canon = match root.canonicalize() {
         Ok(canoned) => canoned,
         Err(e) => {
@@ -30,11 +45,54 @@ fn main() {
         }
     };
 
+    let target_canon = match target.canonicalize() {
+        Ok(canoned) => canoned,
+        Err(e) => {
+            eprintln!("Could not convert target path to absolute: {}", e);
+            std::process::exit(-1);
+        }
+    };
+
     println!("Wikarden root: {}", canon.to_string_lossy());
 
-    let files = index_directory(&canon).unwrap();
-    for (is_dir, path) in files {
+    let index = index_directory(&canon).unwrap();
+    for (is_dir, path) in &index {
         println!("[{}] {}", is_dir, path.to_string_lossy())
+    }
+
+    // Do we need the directory? Let me just grab the files..
+    let files: Vec<&Path> = index
+        .iter()
+        .filter_map(|(is_dir, path)| if !is_dir { Some(path.as_path()) } else { None })
+        .collect();
+
+    let directories: Vec<&Path> = index
+        .iter()
+        .filter_map(|(is_dir, path)| if *is_dir { Some(path.as_path()) } else { None })
+        .collect();
+
+    println!("FILES:");
+    for file in &files {
+        println!("{}", file.to_string_lossy());
+    }
+
+    // Go through and make all the required directories
+    for dir in directories {
+        let dirname = dir.strip_prefix(&canon).unwrap();
+        let mut dir = target_canon.clone();
+        dir.push(dirname);
+        fs::create_dir_all(dir).unwrap();
+    }
+
+    for file in files {
+        let filename = file.strip_prefix(&canon).unwrap();
+        let mut outfile = target_canon.clone();
+        outfile.push(filename);
+        outfile.set_extension("html");
+
+        let parsed = format!("<html><body>{}</body></html>", parse_file(file));
+        let mut file = fs::File::create(outfile).unwrap();
+        file.write_all(parsed.as_bytes()).unwrap();
     }
 }
 
