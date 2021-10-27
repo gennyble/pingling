@@ -8,9 +8,30 @@ use parser::{
     Parser,
 };
 
-pub fn parse_file<P: AsRef<Path>>(path: P) -> String {
+pub fn parse_file<P: AsRef<Path>>(path: P, files: &[&Path]) -> String {
     let txt = std::fs::read_to_string(path.as_ref()).unwrap();
-    let parser: Parser = txt.parse().unwrap();
+    let mut parser: Parser = txt.parse().unwrap();
+
+    for inline in parser.inlines_mut() {
+        match inline {
+            Inline::InterLink { name, location } => {
+                let found: Vec<&&Path> = files
+                    .iter()
+                    .filter(|p| p.ends_with(&format!("{}.md", name)))
+                    .collect();
+
+                if found.len() != 1 {
+                    panic!("Found files does not have a length of one!");
+                }
+
+                let mut relative = relativise_path(path.as_ref(), found[0]).unwrap();
+                relative.set_extension("html");
+
+                *location = relative.to_string_lossy().to_string();
+            }
+            _ => (),
+        }
+    }
 
     let mut ret = String::new();
     for block in parser.blocks {
@@ -30,7 +51,9 @@ fn block_html(block: Block) -> String {
             )
         }
         Block::Paragraph { content } => format!("<p>{}</p>\n", vec_inline_html(content)),
-        Block::CodeBlock { content, .. } => format!("<pre><code>{}</pre></code>\n", content),
+        Block::CodeBlock { content, .. } => {
+            format!("<pre><code>{}</pre></code>\n", html_escape(content))
+        }
         Block::Image { src, alt } => format!("<img src=\"{}\" alt=\"{}\"/>\n", src, alt),
     }
 }
@@ -48,17 +71,24 @@ fn vec_inline_html(vecinline: Vec<Inline>) -> String {
 fn inline_html(inline: Inline) -> String {
     match inline {
         Inline::SoftBreak => String::from("<br>"),
-        Inline::Text(txt) => txt,
-        Inline::Code(code) => format!("<code>{}</code>", code),
+        Inline::Text(txt) => html_escape(txt),
+        Inline::Code(code) => format!("<code>{}</code>", html_escape(code)),
         Inline::Italic { content } => format!("<i>{}</i>", vec_inline_html(content)),
         Inline::Bold { content } => format!("<b>{}</b>", vec_inline_html(content)),
-        Inline::Link { location } => {
-            format!("<a href=\"{location}\">{location}</a>", location = location)
+        Inline::InterLink { name, location } => {
+            format!("<a href=\"{}\">{}</a>", location, name)
         }
         Inline::ReferenceLink { name, location } => {
             format!("<a href=\"{}\">{}</a>", location, name)
         }
+        Inline::AbsoluteLink { location } => {
+            format!("<a href=\"{location}\">{location}</a>", location = location)
+        }
     }
+}
+
+fn html_escape<S: AsRef<str>>(raw: S) -> String {
+    raw.as_ref().replace("<", "&lt;").replace(">", "&gt;")
 }
 
 //TODO: Maybe return a Result with an error type detailng why we failed.

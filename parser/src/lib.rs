@@ -153,7 +153,7 @@ impl Parser {
                 Block::Image { src, .. } => {
                     let link_inline = &Parser::do_links(&src, &linkrefs)[1];
                     let location = match link_inline {
-                        Inline::Link { location } => location,
+                        Inline::InterLink { location, .. } => location,
                         Inline::ReferenceLink { location, .. } => location,
                         _ => panic!(),
                     };
@@ -301,39 +301,41 @@ impl Parser {
 
     fn do_links<S: AsRef<str>>(raw: S, linkrefs: &HashMap<String, String>) -> Vec<Inline> {
         let raw = raw.as_ref();
+
+        // Find absolute links.
+        // NOTE: There still may be reference or interlinks before this!
+        match raw.find("{{") {
+            Some(start) => match raw.find("}}") {
+                Some(end) => {
+                    let before = &raw[..start];
+                    let link = &raw[start + 2..end];
+                    let after = &raw[end + 2..];
+
+                    let mut inlines = Self::do_links(before, linkrefs);
+                    inlines.push(Inline::AbsoluteLink {
+                        location: link.to_owned(),
+                    });
+                    inlines.extend_from_slice(&Self::do_links(after, linkrefs));
+
+                    return inlines;
+                }
+                None => (),
+            },
+            None => (),
+        }
+
+        // Find reference and interlinks.
         match raw.find("{") {
             Some(start) => match raw.find("}") {
                 Some(end) => {
-                    if raw.chars().skip(start + 1).next().unwrap() == '!' {
-                        let name = &raw[start + 2..end];
+                    let before = Inline::Text(raw[..start].to_owned());
+                    let link = &raw[start + 1..end];
+                    let after = &raw[end + 1..];
 
-                        match linkrefs.get(name) {
-                            Some(location) => {
-                                let mut inlines = vec![
-                                    Inline::Text(raw[..start].to_owned()),
-                                    Inline::ReferenceLink {
-                                        name: name.to_owned(),
-                                        location: location.to_owned(),
-                                    },
-                                ];
-                                inlines.extend_from_slice(&Parser::do_links(
-                                    &raw[end + 1..],
-                                    linkrefs,
-                                ));
-                                return inlines;
-                            }
-                            None => (),
-                        }
-                    } else {
-                        let mut inlines = vec![
-                            Inline::Text(raw[..start].to_owned()),
-                            Inline::Link {
-                                location: raw[start + 1..end].to_owned(),
-                            },
-                        ];
-                        inlines.extend_from_slice(&Parser::do_links(&raw[end + 1..], linkrefs));
-                        return inlines;
-                    }
+                    let mut inlines = vec![before, Self::get_link(link, linkrefs)];
+                    inlines.extend_from_slice(&Self::do_links(after, linkrefs));
+
+                    return inlines;
                 }
                 None => (),
             },
@@ -341,6 +343,33 @@ impl Parser {
         }
 
         vec![Inline::Text(raw.to_owned())]
+    }
+
+    fn get_link<S: AsRef<str>>(raw: S, linkrefs: &HashMap<String, String>) -> Inline {
+        let raw = raw.as_ref();
+
+        match raw.chars().next() {
+            // Reference link!
+            Some('!') => match linkrefs.get(&raw[1..]) {
+                Some(location) => Inline::ReferenceLink {
+                    name: raw[1..].to_owned(),
+                    location: location.to_owned(),
+                },
+                None => {
+                    // Recover when we can't find the location by reconstructing the text
+                    Inline::Text(format!("{{{}}}", raw))
+                }
+            },
+            // Interlink!
+            Some(_) => Inline::InterLink {
+                name: raw.to_owned(),
+                location: String::new(),
+            },
+            None => {
+                // We're a link, but we're an empty link. Give back an Inline text with only {}
+                Inline::Text("{}".to_owned())
+            }
+        }
     }
 
     fn pop_until<T: PartialEq>(haystack: &mut Vec<T>, needle: T) -> Vec<T> {
@@ -355,6 +384,66 @@ impl Parser {
 
         ret.reverse();
         ret
+    }
+
+    pub fn inlines_mut<'a>(&'a mut self) -> InlineIter<'a> {
+        InlineIter::new(self)
+    }
+}
+
+pub struct InlineIter<'a> {
+    blocks: Option<std::slice::IterMut<'a, Block>>,
+    inlines: Option<std::slice::IterMut<'a, Inline>>,
+}
+
+impl<'a> InlineIter<'a> {
+    fn new(parser: &'a mut Parser) -> Self {
+        let blocks = parser.blocks.iter_mut();
+
+        Self {
+            blocks: Some(blocks),
+            inlines: None,
+        }
+    }
+}
+
+impl<'a> Iterator for InlineIter<'a> {
+    type Item = &'a mut Inline;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(ref mut inline_iter) = self.inlines {
+            match inline_iter.next() {
+                Some(inline) => return Some(inline),
+                None => (),
+            }
+        }
+
+        if let Some(ref mut block_iter) = self.blocks {
+            loop {
+                match block_iter.next() {
+                    None => {
+                        self.blocks = None;
+                        return None;
+                    }
+                    Some(block) => match block {
+                        Block::Header { content, .. } => {
+                            self.inlines = Some(content.iter_mut());
+                            break;
+                        }
+                        Block::Paragraph { content } => {
+                            self.inlines = Some(content.iter_mut());
+                            break;
+                        }
+                        Block::CodeBlock { language, content } => continue,
+                        Block::Image { src, alt } => continue,
+                    },
+                }
+            }
+
+            self.next()
+        } else {
+            None
+        }
     }
 }
 

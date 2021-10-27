@@ -10,7 +10,7 @@ Like this! See how hard breaks are respected? Markdown lets you break and leave 
 
 Okay, cool, but what can you do? *Italics like `*this*`*. Also some **bold like `**this**`**. You can *italic and **bold** at the same time*. That was hard to implement.
 
-Links? Link externally with curly braces and just putting that good ol' link right in there, like this: `{url}`. Here's my website {https://nyble.dev}.
+Links? Link externally with double curly braces and just putting that good ol' link right in there, like this: `{{url}}`. Here's my website {{https://nyble.dev}}.
 Do you want the link to have text that isn't just the URL? You gotta use reference links for that, like this: `{!Reference}`. Here's my website again {!Nyble Dot Dev}. Don't forget the `[Reference]: url` for that. It must stand on a line of it's own.
 
 [Nyble Dot Dev]: https://nyble.dev

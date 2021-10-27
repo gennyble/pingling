@@ -14,6 +14,7 @@ pub enum Inline {
     Code(String),
     Italic { content: Vec<Inline> },
     Bold { content: Vec<Inline> },
+    AbsoluteLink { location: String },
     ReferenceLink { name: String, location: String },
-    Link { location: String },
+    InterLink { name: String, location: String },
 }

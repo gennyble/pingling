@@ -84,13 +84,13 @@ fn main() {
         fs::create_dir_all(dir).unwrap();
     }
 
-    for file in files {
+    for file in &files {
         let filename = file.strip_prefix(&canon).unwrap();
         let mut outfile = target_canon.clone();
         outfile.push(filename);
         outfile.set_extension("html");
 
-        let parsed = format!("<html><body>{}</body></html>", parse_file(file));
+        let parsed = format!("<html><body>{}</body></html>", parse_file(file, &files));
         let mut file = fs::File::create(outfile).unwrap();
         file.write_all(parsed.as_bytes()).unwrap();
     }
