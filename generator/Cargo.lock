@@ -3,6 +3,10 @@
 version = 3
 
 [[package]]
+name = "bempline"
+version = "0.3.0"
+
+[[package]]
 name = "confindent"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -12,6 +16,7 @@ checksum = "1bde72d4386a91c9079073be49a06b7bbe8204d04868963417015f3556be2c9e"
 name = "generator"
 version = "0.1.0"
 dependencies = [
+ "bempline",
  "confindent",
  "parser",
  "thiserror",

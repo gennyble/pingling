@@ -434,8 +434,8 @@ impl<'a> Iterator for InlineIter<'a> {
                             self.inlines = Some(content.iter_mut());
                             break;
                         }
-                        Block::CodeBlock { language, content } => continue,
-                        Block::Image { src, alt } => continue,
+                        Block::CodeBlock { .. } => continue,
+                        Block::Image { .. } => continue,
                     },
                 }
             }

@@ -1,5 +1,6 @@
 use core::panic;
 
+#[derive(Debug)]
 pub enum Block {
     Header { level: u8, content: Vec<Inline> },
     Paragraph { content: Vec<Inline> },

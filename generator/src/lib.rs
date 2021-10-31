@@ -1,36 +1,24 @@
+pub mod fs;
+
 use std::{
     iter,
     path::{Path, PathBuf},
 };
 
+use fs::Directory;
 use parser::{
     element::{Block, Inline},
     Parser,
 };
 
-pub fn parse_file<P: AsRef<Path>>(path: P, files: &[&Path]) -> String {
+pub fn parse_file<P: AsRef<Path>>(path: P, files: &[&Path], root_directory: &Directory) -> String {
     let txt = std::fs::read_to_string(path.as_ref()).unwrap();
     let mut parser: Parser = txt.parse().unwrap();
 
+    // inlines_mut is broken and won't go to the full depth so this is a little
+    // hacky workaround
     for inline in parser.inlines_mut() {
-        match inline {
-            Inline::InterLink { name, location } => {
-                let found: Vec<&&Path> = files
-                    .iter()
-                    .filter(|p| p.ends_with(&format!("{}.md", name)))
-                    .collect();
-
-                if found.len() != 1 {
-                    panic!("Found files does not have a length of one!");
-                }
-
-                let mut relative = relativise_path(path.as_ref(), found[0]).unwrap();
-                relative.set_extension("html");
-
-                *location = relative.to_string_lossy().to_string();
-            }
-            _ => (),
-        }
+        make_interlinks(inline, files, path.as_ref());
     }
 
     let mut ret = String::new();
@@ -39,6 +27,37 @@ pub fn parse_file<P: AsRef<Path>>(path: P, files: &[&Path]) -> String {
     }
 
     ret
+}
+
+fn make_interlinks<P: AsRef<Path>>(inline: &mut Inline, files: &[&Path], path: P) {
+    match inline {
+        Inline::Italic { content } => {
+            for inline in content {
+                make_interlinks(inline, files, path.as_ref());
+            }
+        }
+        Inline::Bold { content } => {
+            for inline in content {
+                make_interlinks(inline, files, path.as_ref());
+            }
+        }
+        Inline::InterLink { name, location } => {
+            let found: Vec<&&Path> = files
+                .iter()
+                .filter(|p| p.ends_with(&format!("{}.md", name)))
+                .collect();
+
+            if found.len() != 1 {
+                panic!("Found files does not have a length of one!");
+            }
+
+            let mut relative = fs::relativise_path(path.as_ref(), found[0]).unwrap();
+            relative.set_extension("html");
+
+            *location = relative.to_string_lossy().to_string();
+        }
+        _ => (),
+    }
 }
 
 fn block_html(block: Block) -> String {
@@ -89,93 +108,4 @@ fn inline_html(inline: Inline) -> String {
 
 fn html_escape<S: AsRef<str>>(raw: S) -> String {
     raw.as_ref().replace("<", "&lt;").replace(">", "&gt;")
-}
-
-//TODO: Maybe return a Result with an error type detailng why we failed.
-// panic, maybe? Would it be a programming mistake.
-fn relativise_path<A: AsRef<Path>, B: AsRef<Path>>(base: A, target: B) -> Option<PathBuf> {
-    let mut base = base.as_ref().to_owned();
-    let target = target.as_ref().to_owned();
-
-    if base.is_relative() || target.is_relative() {
-        // We need both to be absolute
-        return None;
-    }
-
-    if base.is_file() {
-        if !base.pop() {
-            // base was previously known to be absolute, but we popped and there
-            // wasn't a parent. How can that happen?
-            return None;
-        }
-    }
-
-    let mut pop_count = 0;
-    loop {
-        if target.starts_with(&base) {
-            break;
-        }
-
-        if !base.pop() {
-            // We're at the root, done.
-            break;
-        } else {
-            pop_count += 1;
-        }
-    }
-
-    let mut backtrack: PathBuf = iter::repeat("../").take(pop_count).collect();
-    let target = target.strip_prefix(base).unwrap().to_owned();
-
-    backtrack.push(target);
-    Some(backtrack)
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn relativise_path_same_dir() {
-        let base = PathBuf::from("/srv/wikarden/");
-        let targ = PathBuf::from("/srv/wikarden/testfile.md");
-
-        assert_eq!(
-            PathBuf::from("testfile.md"),
-            relativise_path(&base, &targ).unwrap()
-        )
-    }
-
-    #[test]
-    fn relativise_path_below() {
-        let base = PathBuf::from("/srv/wikarden/higher/tree");
-        let targ = PathBuf::from("/srv/wikarden/testfile.md");
-
-        assert_eq!(
-            PathBuf::from("../../testfile.md"),
-            relativise_path(&base, &targ).unwrap()
-        )
-    }
-
-    #[test]
-    fn relativise_path_above() {
-        let base = PathBuf::from("/srv/wikarden/");
-        let targ = PathBuf::from("/srv/wikarden/testdir/testfile.md");
-
-        assert_eq!(
-            PathBuf::from("testdir/testfile.md"),
-            relativise_path(&base, &targ).unwrap()
-        )
-    }
-
-    #[test]
-    fn relativise_path_nothing() {
-        let base = PathBuf::from("/opt/usr");
-        let targ = PathBuf::from("/srv/testfile.md");
-
-        assert_eq!(
-            PathBuf::from("../../srv/testfile.md"),
-            relativise_path(&base, &targ).unwrap()
-        )
-    }
 }

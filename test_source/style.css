@@ -1,0 +1,19 @@
+* {
+	padding: 0px;
+	margin: 0px;
+	box-sizing: border-box;
+}
+
+body {
+	padding: 3rem 0;
+	width: 100%;
+}
+
+main {
+	width: 40rem;
+	margin: 0 auto;
+}
+
+p {
+	margin: 1rem 0;
+}

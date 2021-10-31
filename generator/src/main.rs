@@ -1,12 +1,13 @@
 use std::{
-    fs,
+    collections::HashMap,
+    fs::File,
     io::Write,
     path::{Path, PathBuf},
 };
 
+use bempline::{Document, Options};
 use confindent::Confindent;
-use generator::parse_file;
-use thiserror::Error;
+use generator::{fs::Directory, parse_file};
 
 fn main() {
     let conf = match Confindent::from_file("generator.conf") {
@@ -53,77 +54,186 @@ fn main() {
         }
     };
 
-    println!("Wikarden root: {}", canon.to_string_lossy());
+    let doc =
+        Document::from_file(conf.child_value("Template").unwrap(), Options::default()).unwrap();
 
-    let index = index_directory(&canon).unwrap();
-    for (is_dir, path) in &index {
-        println!("[{}] {}", is_dir, path.to_string_lossy())
-    }
+    let root_directory = Directory::index(canon).unwrap();
+    let mds = root_directory.find_all_by_extension("md");
 
-    // Do we need the directory? Let me just grab the files..
-    let files: Vec<&Path> = index
-        .iter()
-        .filter_map(|(is_dir, path)| if !is_dir { Some(path.as_path()) } else { None })
-        .collect();
+    root_directory
+        .clone_structure(target_canon, |from, to| match from.extension() {
+            Some(ext) => {
+                if ext.to_string_lossy() == "md" {
+                    let mut to = to.to_owned();
+                    to.set_extension("html");
 
-    let directories: Vec<&Path> = index
-        .iter()
-        .filter_map(|(is_dir, path)| if *is_dir { Some(path.as_path()) } else { None })
-        .collect();
+                    let mut from_no_ext = from.to_owned();
+                    from_no_ext.set_extension("");
 
-    println!("FILES:");
-    for file in &files {
-        println!("{}", file.to_string_lossy());
-    }
+                    let file_stem = to.file_stem().unwrap().to_str().unwrap();
 
-    // Go through and make all the required directories
-    for dir in directories {
-        let dirname = dir.strip_prefix(&canon).unwrap();
-        let mut dir = target_canon.clone();
-        dir.push(dirname);
-        fs::create_dir_all(dir).unwrap();
-    }
+                    let mut from_dir = from.to_owned();
+                    from_dir.pop();
 
-    for file in &files {
-        let filename = file.strip_prefix(&canon).unwrap();
-        let mut outfile = target_canon.clone();
-        outfile.push(filename);
-        outfile.set_extension("html");
+                    let mut doc = doc.clone();
+                    doc.set("page_title", to.file_stem().unwrap().to_string_lossy());
+                    doc.set("title", to.file_stem().unwrap().to_string_lossy());
 
-        let parsed = format!("<html><body>{}</body></html>", parse_file(file, &files));
-        let mut file = fs::File::create(outfile).unwrap();
-        file.write_all(parsed.as_bytes()).unwrap();
-    }
+                    match find_triplet(&root_directory, from) {
+                        ((_, None), (current_bit, Some(current)), None) => {
+                            doc.set("parents", make_current(current_bit, current));
+                            doc.set("current", "");
+                            doc.set("children", "");
+                        }
+                        ((_, None), (current_bit, Some(current)), Some(children)) => {
+                            doc.set("parents", make_current(current_bit, current));
+                            doc.set("current", make_children(file_stem, children));
+                            doc.set("children", "");
+                        }
+                        ((parent_bit, Some(parent)), (current_bit, Some(current)), None) => {
+                            doc.set("parents", make_parent(parent_bit, parent));
+                            doc.set("current", make_current(current_bit, current));
+                            doc.set("children", "");
+                        }
+                        (
+                            (parent_bit, Some(parent)),
+                            (current_bit, Some(current)),
+                            Some(children),
+                        ) => {
+                            doc.set("parents", make_parent(parent_bit, parent));
+                            doc.set("current", make_current(current_bit, current));
+                            doc.set("children", make_children(file_stem, children));
+                        }
+                        _ => unreachable!(),
+                    };
+
+                    let parsed = parse_file(from, &mds, &root_directory);
+                    doc.set("body", parsed);
+
+                    let mut file = File::create(to).unwrap();
+                    file.write_all(doc.compile().as_bytes()).unwrap();
+
+                    false
+                } else {
+                    true
+                }
+            }
+            None => true,
+        })
+        .unwrap();
 }
 
-fn index_directory<P: AsRef<Path>>(search_path: P) -> Result<Vec<(bool, PathBuf)>, IndexError> {
-    let search_path = search_path.as_ref();
-    let mut ret = vec![];
+fn find_triplet<'r>(
+    root: &'r Directory,
+    from: &Path,
+) -> (
+    (String, Option<&'r Directory>),
+    (String, Option<&'r Directory>),
+    Option<&'r Directory>,
+) {
+    let mut search = from.to_owned();
+    search.set_extension("");
 
-    if !search_path.is_dir() {
-        return Err(IndexError::NotADirectory(search_path.to_owned()));
-    }
+    // Check if there's a folder with our filename. If there is, make children
+    let children = root.get_directory(&search);
+    let children_last = search
+        .components()
+        .last()
+        .unwrap()
+        .as_os_str()
+        .to_string_lossy()
+        .to_string();
 
-    for file in search_path.read_dir()? {
-        let file = file?;
-        let fpath = file.path();
-        let ftype = file.file_type()?;
+    search.pop();
+    // This should never be none. Should we check that?
+    let current = root.get_directory(&search);
+    let current_last = search
+        .components()
+        .last()
+        .unwrap()
+        .as_os_str()
+        .to_string_lossy()
+        .to_string();
 
-        if ftype.is_dir() {
-            ret.extend_from_slice(&index_directory(&fpath)?);
-            ret.push((true, fpath));
-        } else {
-            ret.push((false, fpath));
+    search.pop();
+    let parent = root.get_directory(&search);
+    let parent_last = search
+        .components()
+        .last()
+        .unwrap()
+        .as_os_str()
+        .to_string_lossy()
+        .to_string();
+
+    ((current_last, parent), (children_last, current), children)
+}
+
+fn get_paths(dir: &Directory) -> Vec<PathBuf> {
+    let mut paths = vec![];
+
+    for files in dir.files_by_extension.get("md") {
+        for file in files {
+            let mut no_ext = file.clone();
+            no_ext.set_extension("");
+            paths.push(no_ext.strip_prefix(&dir.base).unwrap().to_owned());
         }
     }
 
-    Ok(ret)
+    paths
 }
 
-#[derive(Debug, Error)]
-enum IndexError {
-    #[error("{0} is not a directory")]
-    NotADirectory(PathBuf),
-    #[error("{0}")]
-    IoError(#[from] std::io::Error),
+fn make_parent(parent_bit: String, dir: &Directory) -> String {
+    let mut ret = String::new();
+
+    for path in get_paths(dir) {
+        let pathstr = path.to_string_lossy().to_string();
+        if parent_bit == pathstr {
+            ret.push_str(&format!(
+                "<a id=\"current-directory\" href=\"../{name}.html\">{name}</a>",
+                name = path.to_string_lossy()
+            ));
+        } else {
+            ret.push_str(&format!(
+                "<a href=\"../{name}.html\">{name}</a>",
+                name = path.to_string_lossy()
+            ));
+        }
+    }
+
+    ret
+}
+
+fn make_current(current_bit: String, dir: &Directory) -> String {
+    let mut ret = String::new();
+
+    for path in get_paths(dir) {
+        let pathstr = path.to_string_lossy().to_string();
+        if current_bit == pathstr {
+            ret.push_str(&format!(
+                "<a id=\"current-file\" href=\"{name}.html\">{name}</a>",
+                name = path.to_string_lossy()
+            ));
+        } else {
+            ret.push_str(&format!(
+                "<a href=\"{name}.html\">{name}</a>",
+                name = path.to_string_lossy()
+            ));
+        }
+    }
+
+    ret
+}
+
+fn make_children(current: &str, dir: &Directory) -> String {
+    let mut ret = String::new();
+
+    for path in get_paths(dir) {
+        ret.push_str(&format!(
+            "<a href=\"{}/{name}.html\">{name}</a>",
+            current,
+            name = path.to_string_lossy()
+        ));
+    }
+
+    ret
 }
