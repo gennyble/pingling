@@ -312,9 +312,7 @@ impl Parser {
                     let after = &raw[end + 2..];
 
                     let mut inlines = Self::do_links(before, linkrefs);
-                    inlines.push(Inline::AbsoluteLink {
-                        location: link.to_owned(),
-                    });
+                    inlines.push(Self::absolute_link(link));
                     inlines.extend_from_slice(&Self::do_links(after, linkrefs));
 
                     return inlines;
@@ -350,25 +348,64 @@ impl Parser {
 
         match raw.chars().next() {
             // Reference link!
-            Some('!') => match linkrefs.get(&raw[1..]) {
-                Some(location) => Inline::ReferenceLink {
-                    name: raw[1..].to_owned(),
-                    location: location.to_owned(),
-                },
-                None => {
-                    // Recover when we can't find the location by reconstructing the text
-                    Inline::Text(format!("{{{}}}", raw))
+            Some('!') => {
+                let (name, reference) = Self::parse_link(&raw[1..]);
+
+                let name = if let Some(name) = name {
+                    name
+                } else {
+                    reference.clone()
+                };
+
+                println!("{{!{} | {}}}", name, reference);
+
+                match linkrefs.get(&reference) {
+                    Some(location) => Inline::ReferenceLink {
+                        name,
+                        location: location.clone(),
+                    },
+                    None => {
+                        // Recover when we can't find the location by reconstructing the text
+                        Inline::Text(format!("{{{}}}", raw))
+                    }
                 }
-            },
+            }
             // Interlink!
-            Some(_) => Inline::InterLink {
-                name: raw.to_owned(),
-                location: String::new(),
-            },
+            Some(_) => {
+                let (name, location) = Self::parse_link(&raw);
+
+                let name = if let Some(name) = name {
+                    name
+                } else {
+                    location.clone()
+                };
+
+                Inline::InterLink { name, location }
+            }
             None => {
                 // We're a link, but we're an empty link. Give back an Inline text with only {}
                 Inline::Text("{}".to_owned())
             }
+        }
+    }
+
+    fn parse_link<S: AsRef<str>>(raw: S) -> (Option<String>, String) {
+        match raw.as_ref().split_once('|') {
+            Some((name, link)) => (Some(name.trim().to_owned()), link.trim().to_owned()),
+            None => (None, raw.as_ref().trim().to_owned()),
+        }
+    }
+
+    fn absolute_link<S: AsRef<str>>(raw: S) -> Inline {
+        match raw.as_ref().split_once('|') {
+            Some((name, link)) => Inline::AbsoluteLink {
+                name: Some(name.trim().to_owned()),
+                location: link.trim().to_owned(),
+            },
+            None => Inline::AbsoluteLink {
+                name: None,
+                location: raw.as_ref().trim().to_owned(),
+            },
         }
     }
 

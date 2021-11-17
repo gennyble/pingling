@@ -77,37 +77,28 @@ fn main() {
 
                     let mut doc = doc.clone();
                     doc.set("page_title", to.file_stem().unwrap().to_string_lossy());
-                    doc.set("title", to.file_stem().unwrap().to_string_lossy());
 
-                    match find_triplet(&root_directory, from) {
-                        ((_, None), (current_bit, Some(current)), None) => {
-                            doc.set("parents", make_current(current_bit, current));
-                            doc.set("current", "");
-                            doc.set("children", "");
+                    let mknest = |nest: String| -> String {
+                        if nest == "home" {
+                            format!("<a href='home.html' id='nest'>entrance</a>")
+                        } else {
+                            format!("<a href='../{nest}.html' id='nest'>{nest}</a>", nest = nest)
                         }
-                        ((_, None), (current_bit, Some(current)), Some(children)) => {
-                            doc.set("parents", make_current(current_bit, current));
-                            doc.set("current", make_children(file_stem, children));
-                            doc.set("children", "");
-                        }
-                        ((parent_bit, Some(parent)), (current_bit, Some(current)), None) => {
-                            doc.set("parents", make_parent(parent_bit, parent));
-                            doc.set("current", make_current(current_bit, current));
-                            doc.set("children", "");
-                        }
-                        (
-                            (parent_bit, Some(parent)),
-                            (current_bit, Some(current)),
-                            Some(children),
-                        ) => {
-                            doc.set("parents", make_parent(parent_bit, parent));
-                            doc.set("current", make_current(current_bit, current));
-                            doc.set("children", make_children(file_stem, children));
-                        }
-                        _ => unreachable!(),
                     };
 
-                    let parsed = parse_file(from, &mds, &root_directory);
+                    match find_friends(&root_directory, from) {
+                        (Some(nest), friends) => {
+                            doc.set("nest", mknest(nest));
+                            doc.set("friends", friends);
+                        }
+                        (None, friends) => {
+                            doc.set("nest", mknest("home".into()));
+                            doc.set("friends", friends);
+                        }
+                    };
+
+                    let (title, parsed) = parse_file(from, &mds);
+                    doc.set("title", title);
                     doc.set("body", parsed);
 
                     let mut file = File::create(to).unwrap();
@@ -123,14 +114,7 @@ fn main() {
         .unwrap();
 }
 
-fn find_triplet<'r>(
-    root: &'r Directory,
-    from: &Path,
-) -> (
-    (String, Option<&'r Directory>),
-    (String, Option<&'r Directory>),
-    Option<&'r Directory>,
-) {
+fn find_friends<'r>(root: &'r Directory, from: &Path) -> (Option<String>, String) {
     let mut search = from.to_owned();
     search.set_extension("");
 
@@ -157,7 +141,7 @@ fn find_triplet<'r>(
 
     search.pop();
     let parent = root.get_directory(&search);
-    let parent_last = search
+    let _parent_last = search
         .components()
         .last()
         .unwrap()
@@ -165,7 +149,25 @@ fn find_triplet<'r>(
         .to_string_lossy()
         .to_string();
 
-    ((current_last, parent), (children_last, current), children)
+    if parent.is_some() {
+        if children.is_some() {
+            (
+                Some(current_last.clone()),
+                make_children(&children_last, children.unwrap()),
+            )
+        } else {
+            (
+                Some(current_last.clone()),
+                make_current(children_last, current.unwrap()),
+            )
+        }
+    } else {
+        if children.is_some() {
+            (None, make_children(&children_last, children.unwrap()))
+        } else {
+            (None, make_current(children_last, current.unwrap()))
+        }
+    }
 }
 
 fn get_paths(dir: &Directory) -> Vec<PathBuf> {
@@ -182,38 +184,12 @@ fn get_paths(dir: &Directory) -> Vec<PathBuf> {
     paths
 }
 
-fn make_parent(parent_bit: String, dir: &Directory) -> String {
-    let mut ret = String::new();
-
-    for path in get_paths(dir) {
-        let pathstr = path.to_string_lossy().to_string();
-        if parent_bit == pathstr {
-            ret.push_str(&format!(
-                "<a id=\"current-directory\" href=\"../{name}.html\">{name}</a>",
-                name = path.to_string_lossy()
-            ));
-        } else {
-            ret.push_str(&format!(
-                "<a href=\"../{name}.html\">{name}</a>",
-                name = path.to_string_lossy()
-            ));
-        }
-    }
-
-    ret
-}
-
 fn make_current(current_bit: String, dir: &Directory) -> String {
     let mut ret = String::new();
 
     for path in get_paths(dir) {
         let pathstr = path.to_string_lossy().to_string();
-        if current_bit == pathstr {
-            ret.push_str(&format!(
-                "<a id=\"current-file\" href=\"{name}.html\">{name}</a>",
-                name = path.to_string_lossy()
-            ));
-        } else {
+        if current_bit != pathstr {
             ret.push_str(&format!(
                 "<a href=\"{name}.html\">{name}</a>",
                 name = path.to_string_lossy()

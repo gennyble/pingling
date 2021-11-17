@@ -5,13 +5,12 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use fs::Directory;
 use parser::{
     element::{Block, Inline},
     Parser,
 };
 
-pub fn parse_file<P: AsRef<Path>>(path: P, files: &[&Path], root_directory: &Directory) -> String {
+pub fn parse_file<P: AsRef<Path>>(path: P, files: &[&Path]) -> (String, String) {
     let txt = std::fs::read_to_string(path.as_ref()).unwrap();
     let mut parser: Parser = txt.parse().unwrap();
 
@@ -22,11 +21,22 @@ pub fn parse_file<P: AsRef<Path>>(path: P, files: &[&Path], root_directory: &Dir
     }
 
     let mut ret = String::new();
-    for block in parser.blocks {
+
+    let mut block_iter = parser.blocks.into_iter();
+    let title = match block_iter.next() {
+        Some(Block::Header { level, content }) if level == 1 => vec_inline_html(content),
+        Some(block) => {
+            ret.push_str(&block_html(block));
+            String::new()
+        }
+        None => String::new(),
+    };
+
+    for block in block_iter {
         ret.push_str(&block_html(block));
     }
 
-    ret
+    (title, ret)
 }
 
 fn make_interlinks<P: AsRef<Path>>(inline: &mut Inline, files: &[&Path], path: P) {
@@ -41,13 +51,15 @@ fn make_interlinks<P: AsRef<Path>>(inline: &mut Inline, files: &[&Path], path: P
                 make_interlinks(inline, files, path.as_ref());
             }
         }
-        Inline::InterLink { name, location } => {
+        Inline::InterLink { location, name } => {
+            println!("{} | {}", location, name);
             let found: Vec<&&Path> = files
                 .iter()
-                .filter(|p| p.ends_with(&format!("{}.md", name)))
+                .filter(|p| p.ends_with(&format!("{}.md", location)))
                 .collect();
 
             if found.len() != 1 {
+                dbg!(location, found);
                 panic!("Found files does not have a length of one!");
             }
 
@@ -100,8 +112,13 @@ fn inline_html(inline: Inline) -> String {
         Inline::ReferenceLink { name, location } => {
             format!("<a href=\"{}\">{}</a>", location, name)
         }
-        Inline::AbsoluteLink { location } => {
-            format!("<a href=\"{location}\">{location}</a>", location = location)
+        Inline::AbsoluteLink { name, location } => {
+            let name = match name {
+                Some(name) => name,
+                None => location.clone(),
+            };
+
+            format!("<a href=\"{}\">{}</a>", location, name)
         }
     }
 }

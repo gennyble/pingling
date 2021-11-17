@@ -13,9 +13,22 @@ pub enum Inline {
     SoftBreak,
     Text(String),
     Code(String),
-    Italic { content: Vec<Inline> },
-    Bold { content: Vec<Inline> },
-    AbsoluteLink { location: String },
-    ReferenceLink { name: String, location: String },
-    InterLink { name: String, location: String },
+    Italic {
+        content: Vec<Inline>,
+    },
+    Bold {
+        content: Vec<Inline>,
+    },
+    AbsoluteLink {
+        name: Option<String>,
+        location: String,
+    },
+    ReferenceLink {
+        name: String,
+        location: String,
+    },
+    InterLink {
+        name: String,
+        location: String,
+    },
 }
